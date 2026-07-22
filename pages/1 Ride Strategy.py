@@ -1,0 +1,409 @@
+import streamlit as st
+from utils.data_loader import load_trip_data
+import pydeck as pdk
+from utils.community_areas import COMMUNITY_AREA_NAMES
+import pandas as pd
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+
+def get_metric_status(pct_better):
+    if pct_better >= 10:
+        return "🟢", "green"
+    elif pct_better >= -10:
+        return "🟡", "orange"
+    else:
+        return "🔴", "red"
+
+
+chicago_now = datetime.now(ZoneInfo("America/Chicago"))
+next_hour = chicago_now + timedelta(hours=1)
+
+default_weekday_num = (next_hour.weekday() + 1) % 7
+default_hour_num = next_hour.hour
+
+
+st.set_page_config(
+    page_title="Prime Pickup | RideSights",
+    page_icon="📍",
+    layout="wide"
+)
+
+st.title("Ride Strategy")
+st.write("Personalized driving recommendations powered by historical City of Chicago rideshare data.")
+
+weekday_options = {
+    "Sunday": 0,
+    "Monday": 1,
+    "Tuesday": 2,
+    "Wednesday": 3,
+    "Thursday": 4,
+    "Friday": 5,
+    "Saturday": 6
+}
+
+default_weekday_index = list(weekday_options.values()).index(
+    default_weekday_num
+)
+
+optimization_options = {
+    "Stay Busy": "total_trips",
+    "Quick Trip Turnover": "avg_trip_value",
+    "Best Earnings Opportunity": "avg_trip_miles",
+}
+
+
+col1, col2 = st.columns(2)
+
+with col1:
+    selected_weekday = st.selectbox(
+        "Day",
+        weekday_options.keys(),
+        index=default_weekday_index
+    )
+
+hour_options = {
+    "12:00 AM": 0,
+    "1:00 AM": 1,
+    "2:00 AM": 2,
+    "3:00 AM": 3,
+    "4:00 AM": 4,
+    "5:00 AM": 5,
+    "6:00 AM": 6,
+    "7:00 AM": 7,
+    "8:00 AM": 8,
+    "9:00 AM": 9,
+    "10:00 AM": 10,
+    "11:00 AM": 11,
+    "12:00 PM": 12,
+    "1:00 PM": 13,
+    "2:00 PM": 14,
+    "3:00 PM": 15,
+    "4:00 PM": 16,
+    "5:00 PM": 17,
+    "6:00 PM": 18,
+    "7:00 PM": 19,
+    "8:00 PM": 20,
+    "9:00 PM": 21,
+    "10:00 PM": 22,
+    "11:00 PM": 23,
+}   
+
+default_hour_index = list(hour_options.values()).index(
+    default_hour_num
+)
+
+with col2:
+    selected_hour = st.selectbox(
+        "Hour",
+        options=list(hour_options.keys()),
+        index=default_hour_index
+    )
+
+selected_optimization = st.selectbox(
+    "Optimize for",
+    options=list(optimization_options.keys()),
+)
+
+df = load_trip_data(
+    weekday_num=weekday_options[selected_weekday],
+    start_hour=hour_options[selected_hour],
+)
+
+trips_analyzed = int(df["total_trips"].sum())
+
+
+area_summary = (
+    df.groupby("pickup_community_area", as_index=False)
+    .agg(
+        total_trips=("total_trips", "sum"),
+        total_trip_value=("total_trip_value", "sum"),
+        total_miles=("total_miles", "sum"),
+        total_seconds=("total_seconds", "sum"),
+    )
+)
+
+area_summary["avg_trip_value"] = (
+    area_summary["total_trip_value"]
+    / area_summary["total_trips"]
+)
+
+area_summary["avg_trip_miles"] = (
+    area_summary["total_miles"]
+    / area_summary["total_trips"]
+)
+
+area_summary["avg_trip_minutes"] = (
+    area_summary["total_seconds"]
+    / area_summary["total_trips"]
+    / 60
+)
+
+area_summary["quick_trip_turnover"] = (
+    area_summary["total_trips"] / area_summary["avg_trip_minutes"]
+)
+
+area_summary["pickup_community_area"] = pd.to_numeric(
+    area_summary["pickup_community_area"],
+    errors="coerce",
+).astype("Int64")
+
+area_summary["area_name"] = (
+    area_summary["pickup_community_area"]
+    .map(COMMUNITY_AREA_NAMES)
+    .fillna("Unknown Area")
+)
+
+area_summary['earnings_opportunity'] = (
+    (area_summary["total_trips"] * area_summary['avg_trip_value']) 
+    / area_summary['avg_trip_minutes']
+)
+
+area_summary["earnings_rank"] = (
+    area_summary["earnings_opportunity"]
+    .rank(method="min", ascending=False)
+    .astype(int)
+)
+
+### add a demand threshold to definnitely recommend an area w/ at least median demand
+
+demand_cutoff = area_summary["total_trips"].median()
+
+area_summary["demand_rank"] = (
+    area_summary["total_trips"]
+    .rank(method="min", ascending=False)
+    .astype(int)
+)
+
+eligible_areas = area_summary[
+    area_summary["total_trips"] >= demand_cutoff
+].copy()
+
+median_trip_value = area_summary["avg_trip_value"].median()
+median_trip_miles = area_summary["avg_trip_miles"].median()
+median_trip_minutes = area_summary["avg_trip_minutes"].median()
+
+### set recommended location equal to top area based on selected metric
+if selected_optimization == "Stay Busy":
+    recommended = area_summary.loc[
+        area_summary["total_trips"].idxmax()
+    ]
+
+elif selected_optimization == "Quick Trip Turnover":
+    recommended = eligible_areas.loc[
+        eligible_areas["quick_trip_turnover"].idxmax()
+    ]
+
+elif selected_optimization == "Best Earnings Opportunity":
+    recommended = eligible_areas.loc[
+        eligible_areas["earnings_opportunity"].idxmax()
+    ]
+
+trip_value_pct_vs_median = (
+    (recommended["avg_trip_value"] - median_trip_value)
+    / median_trip_value
+    * 100
+)
+
+trip_miles_pct_better = (
+    (median_trip_miles - recommended["avg_trip_miles"])
+    / median_trip_miles
+    * 100
+)
+
+trip_minutes_pct_better = (
+    (median_trip_minutes - recommended["avg_trip_minutes"])
+    / median_trip_minutes
+    * 100
+)
+
+minutes_direction = (
+    "faster"
+    if trip_minutes_pct_better >= 0
+    else "slower"
+)
+
+minutes_icon, minutes_color = get_metric_status(
+    trip_minutes_pct_better
+)
+
+miles_icon, miles_color = get_metric_status(
+    trip_miles_pct_better
+)
+
+value_icon, value_color = get_metric_status(
+    trip_value_pct_vs_median
+)
+
+
+st.subheader("Recommended Pickup Area")
+
+recommended_demand_rank = int(recommended["demand_rank"])
+recommended_earnings_rank = int(recommended["earnings_rank"])
+
+total_areas = len(area_summary)
+
+first_third_end = total_areas / 3
+second_third_end = 2 * total_areas / 3
+
+if recommended_demand_rank <= first_third_end:
+    demand_icon = "🟢"
+    demand_label = "Strong pickup demand"
+    demand_color = "green"
+
+elif recommended_demand_rank <= second_third_end:
+    demand_icon = "🟡"
+    demand_label = "Moderate pickup demand"
+    demand_color = "orange"
+
+else:
+    demand_icon = "🔴"
+    demand_label = "Lower pickup demand"
+    demand_color = "red"
+
+
+with st.container(border=True):
+    st.markdown(f"### {recommended['area_name']}")
+
+    st.markdown(
+    f"{demand_icon} **Pickup demand** — "
+    f":{demand_color}[**ranked #{recommended_demand_rank} "
+    f"of {total_areas} areas**]"
+)
+
+    if selected_optimization == "Quick Trip Turnover":
+        st.markdown(
+            f"{minutes_icon} **Average trip time** — "
+            f"**{recommended['avg_trip_minutes']:.1f} minutes**, "
+            f":{minutes_color}[**{abs(trip_minutes_pct_better):.0f}% "
+            f"{minutes_direction}** than the median area]"
+        )
+
+        miles_direction = (
+            "shorter"
+            if trip_miles_pct_better >= 0
+            else "longer"
+        )
+
+        st.markdown(
+            f"{miles_icon} **Average trip distance** — "
+            f"**{recommended['avg_trip_miles']:.1f} miles**, "
+            f":{miles_color}[**{abs(trip_miles_pct_better):.0f}% "
+            f"{miles_direction}** than the median area]"
+        )
+
+    elif selected_optimization == "Best Earnings Opportunity":
+        value_direction = (
+            "above"
+            if trip_value_pct_vs_median >= 0
+            else "below"
+        )
+
+        st.markdown(
+            f"🟢 **Earnings opportunity** — "
+            f":green[**ranked #{recommended_earnings_rank} "
+            f"of {total_areas} areas**]"
+        )
+
+        st.markdown(
+            f"{value_icon} **Average gross trip value** — "
+            f"**${recommended['avg_trip_value']:.2f}**, "
+            f":{value_color}[**{abs(trip_value_pct_vs_median):.0f}% "
+            f"{value_direction} the median area**]"
+        )
+
+        st.caption(
+            "Earnings Opportunity combines historical pickup demand, "
+            "average gross trip value, and average trip duration."
+        )
+
+
+st.subheader("Top Pickup Areas") 
+
+display_df = (
+    area_summary
+    .sort_values("total_trips", ascending=False)
+    .head(10)
+    [
+        [
+            "area_name",
+            "total_trips",
+            "avg_trip_value",
+            "avg_trip_miles",
+            "avg_trip_minutes"
+        ]
+    ]
+    .rename(
+        columns={
+            "area_name": "Pickup Area",
+            "total_trips": "Trips",
+            "avg_trip_value": "Avg Trip Value",
+            "avg_trip_miles": "Avg Miles",
+            "avg_trip_minutes": "Avg Minutes",
+        }
+    )
+)
+
+st.dataframe(
+    display_df,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Trips": st.column_config.NumberColumn(
+            "Trips in Dataset",
+            format="%d",
+        ),
+        "Avg Trip Value": st.column_config.NumberColumn(
+            "Avg Gross Trip Value*",
+            format="$%.2f",
+        ),
+        "Avg Miles": st.column_config.NumberColumn(
+            "Avg Miles",
+            format="%.1f",
+        ),
+        "Avg Minutes": st.column_config.NumberColumn(
+            "Avg Minutes",
+            format="%.1f",
+        ),
+    },
+)
+
+st.caption(
+    "*Avg Trip Value reflects the total amount charged for the trip "
+    "and does not represent the driver's net earnings."
+)
+
+st.caption(
+    f"Based on {trips_analyzed:,} historical trips recorded for "
+    f"{selected_weekday}s from {selected_hour} to the following hour."
+)
+
+
+
+layer = pdk.Layer(
+    "HeatmapLayer",
+    data=df,
+    get_position="[longitude, latitude]",
+    get_weight="total_trips",
+    radius_pixels=35,
+    intensity=1.0,
+    threshold=0.08,
+    opacity=0.7,
+)
+
+view_state = pdk.ViewState(
+    latitude=41.90,
+    longitude=-87.68,
+    zoom=9.8,
+    pitch=0
+)
+
+deck = pdk.Deck(
+    layers=[layer],
+    initial_view_state=view_state,
+    map_provider="carto",
+    map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+)
+
+st.pydeck_chart(deck, use_container_width=True)
+
