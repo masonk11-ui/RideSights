@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 from sodapy import Socrata
 
-START_DATE = "2026-05-04T00:00:00"
+START_DATE = "2026-03-04T00:00:00"
 END_DATE = "2026-06-01T00:00:00"
 
 
@@ -17,8 +17,8 @@ DATA_PATH = (
 def get_client():
     return Socrata(
         "data.cityofchicago.org",
-        app_token = "YFowgnbpx8mMjdYYeRr2g71KJ",
-        timeout=5000
+        app_token=st.secrets["SOCRATA_APP_TOKEN"],
+        timeout=5000,
     )
 
 
