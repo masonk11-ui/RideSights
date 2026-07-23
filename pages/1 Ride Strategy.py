@@ -47,9 +47,9 @@ default_weekday_index = list(weekday_options.values()).index(
 )
 
 optimization_options = {
-    "Stay Busy": "total_trips",
-    "Quick Trip Turnover": "avg_trip_value",
-    "Best Earnings Opportunity": "avg_trip_miles",
+    "Staying Busy": "total_trips",
+    "Quick Trip Turnover": "quick_trip_turnover",
+    "Best Earnings Opportunity": "earnings_opportunity",
 }
 
 
@@ -139,8 +139,20 @@ area_summary["avg_trip_minutes"] = (
     / 60
 )
 
+area_summary["demand_percentile"] = (
+    area_summary["total_trips"].rank(pct=True)
+)
+
+area_summary["short_trip_percentile"] = (
+    area_summary["avg_trip_minutes"].rank(
+        pct=True,
+        ascending=False,
+    )
+)
+
 area_summary["quick_trip_turnover"] = (
-    area_summary["total_trips"] / area_summary["avg_trip_minutes"]
+    0.50 * area_summary["demand_percentile"]
+    + 0.50 * area_summary["short_trip_percentile"]
 )
 
 area_summary["pickup_community_area"] = pd.to_numeric(
@@ -184,20 +196,19 @@ median_trip_miles = area_summary["avg_trip_miles"].median()
 median_trip_minutes = area_summary["avg_trip_minutes"].median()
 
 ### set recommended location equal to top area based on selected metric
-if selected_optimization == "Stay Busy":
-    recommended = area_summary.loc[
-        area_summary["total_trips"].idxmax()
-    ]
+if selected_optimization == "Staying Busy":
+    ranked_areas = area_summary.sort_values(
+        "total_trips",
+        ascending=False,
+    ).copy()
 
-elif selected_optimization == "Quick Trip Turnover":
-    recommended = eligible_areas.loc[
-        eligible_areas["quick_trip_turnover"].idxmax()
-    ]
+else:
+    ranked_areas = eligible_areas.sort_values(
+        optimization_options[selected_optimization],
+        ascending=False,
+    ).copy()
 
-elif selected_optimization == "Best Earnings Opportunity":
-    recommended = eligible_areas.loc[
-        eligible_areas["earnings_opportunity"].idxmax()
-    ]
+recommended = ranked_areas.iloc[0]
 
 trip_value_pct_vs_median = (
     (recommended["avg_trip_value"] - median_trip_value)
@@ -236,7 +247,7 @@ value_icon, value_color = get_metric_status(
 )
 
 
-st.subheader("Recommended Pickup Area")
+st.subheader(f"Top Areas for {selected_optimization}")
 
 recommended_demand_rank = int(recommended["demand_rank"])
 recommended_earnings_rank = int(recommended["earnings_rank"])
@@ -322,7 +333,7 @@ st.subheader("Top Pickup Areas")
 
 display_df = (
     area_summary
-    .sort_values("total_trips", ascending=False)
+    .sort_values(optimization_options[selected_optimization], ascending=False)
     .head(10)
     [
         [
