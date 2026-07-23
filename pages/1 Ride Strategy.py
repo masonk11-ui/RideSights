@@ -247,7 +247,7 @@ value_icon, value_color = get_metric_status(
 )
 
 
-st.subheader(f"Top Areas for {selected_optimization}")
+st.subheader(f"Recommendation for {selected_optimization}")
 
 recommended_demand_rank = int(recommended["demand_rank"])
 recommended_earnings_rank = int(recommended["earnings_rank"])
