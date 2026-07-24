@@ -4,6 +4,29 @@ import streamlit as st
 import streamlit as st
 from utils.style import apply_global_styles
 
+
+st.markdown(
+    """
+    <style>
+    div.stButton > button {
+        background-color: #1C2129;
+        color: white;
+        border: 1px solid #343B46;
+        border-radius: 10px;
+        padding: 0.7rem 1.25rem;
+        font-weight: 600;
+    }
+
+    div.stButton > button:hover {
+        background-color: #252B34;
+        border-color: #6B7280;
+        color: white;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 apply_global_styles()
 
 st.set_page_config(
@@ -30,24 +53,22 @@ st.write(
     "Get a recommended pickup area, neighborhood rankings, and an interactive demand heatmap."
 )
 
-st.page_link(
-    "pages/1 Ride Strategy.py",
-    label="Get My Ride Strategy",
-    icon= "🚕",
-)
+if st.button(
+    "🚕 Get My Ride Strategy",
+    key="ride_strategy_cta",
+):
+    st.switch_page("pages/1 Ride Strategy.py")
 
 st.divider()
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
     st.metric("Historical Trips", "4M+")
 
 with col2:
-    st.metric("Community Areas", "77")
+    st.metric("Chicago Community Areas", "77")
 
-with col3:
-    st.metric("Driving Strategies", "3")
 
 st.caption(
     "Built with historical rideshare data reported to the City of Chicago. "

@@ -154,8 +154,8 @@ area_summary["short_trip_percentile"] = (
 )
 
 area_summary["quick_trip_turnover"] = (
-    0.50 * area_summary["demand_percentile"]
-    + 0.50 * area_summary["short_trip_percentile"]
+    0.30 * area_summary["demand_percentile"]
+    + 0.70 * area_summary["short_trip_percentile"]
 )
 
 area_summary["pickup_community_area"] = pd.to_numeric(
@@ -169,24 +169,16 @@ area_summary["area_name"] = (
     .fillna("Unknown Area")
 )
 
-area_summary['earnings_opportunity'] = (
-    (area_summary["total_trips"] * area_summary['avg_trip_value']) 
-    / area_summary['avg_trip_minutes']
-)
-
-area_summary["earnings_rank"] = (
-    area_summary["earnings_opportunity"]
-    .rank(method="min", ascending=False)
-    .astype(int)
-)
-
 area_summary["gross_trip_value_per_hour"] = (
     area_summary["avg_trip_value"]
     / area_summary["avg_trip_minutes"]
     * 60
 )
 
-### add a demand threshold to definnitely recommend an area w/ at least median demand
+area_summary["gross_value_rate_percentile"] = (
+    area_summary["gross_trip_value_per_hour"]
+    .rank(pct=True)
+)
 
 demand_cutoff = area_summary["total_trips"].median()
 
@@ -196,9 +188,22 @@ area_summary["demand_rank"] = (
     .astype(int)
 )
 
+area_summary["earnings_opportunity"] = (
+    0.65 * area_summary["gross_value_rate_percentile"]
+    + 0.35 * area_summary["demand_percentile"]
+)
+
 eligible_areas = area_summary[
     area_summary["total_trips"] >= demand_cutoff
 ].copy()
+
+eligible_areas["earnings_rank"] = (
+    eligible_areas["earnings_opportunity"]
+    .rank(method="min", ascending=False)
+    .astype(int)
+)
+
+eligible_area_count = len(eligible_areas)
 
 median_trip_value = area_summary["avg_trip_value"].median()
 median_trip_miles = area_summary["avg_trip_miles"].median()
@@ -259,7 +264,9 @@ value_icon, value_color = get_metric_status(
 st.subheader(f"Recommendation for {selected_optimization}")
 
 recommended_demand_rank = int(recommended["demand_rank"])
-recommended_earnings_rank = int(recommended["earnings_rank"])
+
+if selected_optimization == "Best Earnings Opportunity":
+    recommended_earnings_rank = int(recommended["earnings_rank"])
 
 total_areas = len(area_summary)
 
@@ -343,7 +350,7 @@ st.subheader(f"Top Recommendations")
 strategy_descriptions = {
     "Staying Busy": "Ranked by historical pickup demand.",
     "Quick Trip Turnover": (
-        "Ranked using pickup demand, average trip time, and average trip distance."
+        "Ranked among areas with at least median demand, prioritizing shorter trip times while also accounting for demand."
     ),
     "Best Earnings Opportunity": (
         "Ranked using historical pickup demand, average gross trip value, "
@@ -361,11 +368,7 @@ rows_to_show = st.segmented_control(
 )
 
 ranked_df = (
-    area_summary
-    .sort_values(
-        optimization_options[selected_optimization],
-        ascending=False,
-    )
+    ranked_areas
     .reset_index(drop=True)
     .copy()
 )
