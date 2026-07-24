@@ -1,9 +1,17 @@
 import streamlit as st
 
+
+import streamlit as st
+from utils.style import apply_global_styles
+
+apply_global_styles()
+
 st.set_page_config(
     page_title="RideSights",
     layout="wide"
 )
+
+apply_global_styles()
 
 st.title("RideSights")
 st.write("### Make more. Drive less.")

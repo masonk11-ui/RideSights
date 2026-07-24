@@ -5,6 +5,7 @@ from utils.community_areas import COMMUNITY_AREA_NAMES
 import pandas as pd
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from utils.style import apply_global_styles
 
 
 def get_metric_status(pct_better):
@@ -28,6 +29,8 @@ st.set_page_config(
     page_icon="📍",
     layout="wide"
 )
+
+apply_global_styles()
 
 st.title("Ride Strategy")
 st.write("Personalized driving recommendations powered by historical City of Chicago rideshare data.")
@@ -329,19 +332,29 @@ with st.container(border=True):
         )
 
 
-st.subheader("Top Pickup Areas") 
+st.subheader(f"Top Areas for {selected_optimization}") 
+
+rows_to_show = st.segmented_control(
+    "Areas to show",
+    options=[5, 10],
+    default=5,
+    format_func=lambda x: f"Top {x}",
+)
 
 display_df = (
     area_summary
-    .sort_values(optimization_options[selected_optimization], ascending=False)
-    .head(10)
+    .sort_values(
+        optimization_options[selected_optimization],
+        ascending=False,
+    )
+    .head(rows_to_show)
     [
         [
             "area_name",
             "total_trips",
             "avg_trip_value",
             "avg_trip_miles",
-            "avg_trip_minutes"
+            "avg_trip_minutes",
         ]
     ]
     .rename(
@@ -378,7 +391,6 @@ st.dataframe(
         ),
     },
 )
-
 st.caption(
     "*Avg Trip Value reflects the total amount charged for the trip "
     "and does not represent the driver's net earnings."
