@@ -180,6 +180,12 @@ area_summary["earnings_rank"] = (
     .astype(int)
 )
 
+area_summary["gross_trip_value_per_hour"] = (
+    area_summary["avg_trip_value"]
+    / area_summary["avg_trip_minutes"]
+    * 60
+)
+
 ### add a demand threshold to definnitely recommend an area w/ at least median demand
 
 demand_cutoff = area_summary["total_trips"].median()
@@ -332,7 +338,20 @@ with st.container(border=True):
         )
 
 
-st.subheader(f"Top Areas for {selected_optimization}") 
+st.subheader(f"Top Recommendations") 
+
+strategy_descriptions = {
+    "Staying Busy": "Ranked by historical pickup demand.",
+    "Quick Trip Turnover": (
+        "Ranked using pickup demand, average trip time, and average trip distance."
+    ),
+    "Best Earnings Opportunity": (
+        "Ranked using historical pickup demand, average gross trip value, "
+        "and average trip duration."
+    ),
+}
+
+st.caption(strategy_descriptions[selected_optimization])
 
 rows_to_show = st.segmented_control(
     "Areas to show",
@@ -341,18 +360,30 @@ rows_to_show = st.segmented_control(
     format_func=lambda x: f"Top {x}",
 )
 
-display_df = (
+ranked_df = (
     area_summary
     .sort_values(
         optimization_options[selected_optimization],
         ascending=False,
     )
+    .reset_index(drop=True)
+    .copy()
+)
+
+ranked_df["Rank"] = ranked_df.index + 1
+
+
+
+display_df = (
+    ranked_df
     .head(rows_to_show)
     [
         [
+            "Rank",
             "area_name",
             "total_trips",
             "avg_trip_value",
+            "gross_trip_value_per_hour",
             "avg_trip_miles",
             "avg_trip_minutes",
         ]
@@ -362,6 +393,7 @@ display_df = (
             "area_name": "Pickup Area",
             "total_trips": "Trips",
             "avg_trip_value": "Avg Trip Value",
+            "gross_trip_value_per_hour": "Gross Value / Trip Hour",
             "avg_trip_miles": "Avg Miles",
             "avg_trip_minutes": "Avg Minutes",
         }
@@ -373,6 +405,11 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
+        "Rank": st.column_config.NumberColumn(
+            "Rank",
+            format="%d",
+            width="small",
+        ),
         "Trips": st.column_config.NumberColumn(
             "Trips in Dataset",
             format="%d",
@@ -389,6 +426,10 @@ st.dataframe(
             "Avg Minutes",
             format="%.1f",
         ),
+        "Gross Value / Trip Hour": st.column_config.NumberColumn(
+            "Gross Value / Trip Hour*",
+            format="$%.2f",
+),
     },
 )
 st.caption(
