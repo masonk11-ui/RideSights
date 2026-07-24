@@ -15,6 +15,7 @@ def get_metric_status(pct_better):
         return "🟡", "orange"
     else:
         return "🔴", "red"
+    
 
 
 chicago_now = datetime.now(ZoneInfo("America/Chicago"))
@@ -376,7 +377,6 @@ ranked_df = (
 ranked_df["Rank"] = ranked_df.index + 1
 
 
-
 display_df = (
     ranked_df
     .head(rows_to_show)
@@ -403,37 +403,82 @@ display_df = (
     )
 )
 
+highlight_col_map = {
+    "Staying Busy": "Trips",
+    "Quick Trip Turnover": "Avg Minutes",
+    "Best Earnings Opportunity": "Gross Value / Trip Hour",
+}
+highlight_col = highlight_col_map[selected_optimization]
+
+RANK_CHIP_BG = "rgba(55, 138, 221, 0.22)"
+RANK_TEXT_COLOR = "#7FB4EE"
+
+
+def style_rank_cell(rank):
+    if rank <= 3:
+        return (
+            f"background-color: {RANK_CHIP_BG}; "
+            f"color: {RANK_TEXT_COLOR}; "
+            "font-weight: 700; "
+            "border-radius: 12px; "
+            "text-align: center;"
+        )
+    return "text-align: center;"
+
+
+# per-column display config, so each metric can be the progress column when active
+col_specs = {
+    "Trips": {"label": "Trips in Dataset", "fmt": "%d"},
+    "Avg Trip Value": {"label": "Avg Gross Trip Value*", "fmt": "$%.2f"},
+    "Gross Value / Trip Hour": {"label": "Gross Value / Trip Hour*", "fmt": "$%.2f"},
+    "Avg Miles": {"label": "Avg Miles", "fmt": "%.1f"},
+    "Avg Minutes": {"label": "Avg Minutes", "fmt": "%.1f"},
+}
+
+def format_rank(rank):
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    return medals.get(rank, str(rank))
+
+
+format_dict = {
+    col: ("{:,.0f}" if spec["fmt"] == "%d" else "${:.2f}" if "$" in spec["fmt"] else "{:.1f}")
+    for col, spec in col_specs.items()
+    if col != highlight_col
+}
+format_dict["Rank"] = format_rank
+
+styled_df = (
+    display_df.style
+    .format(format_dict)
+    .set_properties(
+        subset=["Rank"],
+        **{"text-align": "center", "font-size": "16px"},
+    )
+)
+
+metric_min = float(display_df[highlight_col].min())
+metric_max = float(display_df[highlight_col].max())
+
+column_config = {
+    "Rank": st.column_config.Column("Rank", width="small"),
+}
+
+for col, spec in col_specs.items():
+    if col == highlight_col:
+        column_config[col] = st.column_config.ProgressColumn(
+            spec["label"],
+            format=spec["fmt"],
+            min_value=metric_min * 0.9,
+            max_value=metric_max,
+        )
+    else:
+        column_config[col] = st.column_config.Column(spec["label"])
+
 st.dataframe(
-    display_df,
+    styled_df,
     use_container_width=True,
     hide_index=True,
-    column_config={
-        "Rank": st.column_config.NumberColumn(
-            "Rank",
-            format="%d",
-            width="small",
-        ),
-        "Trips": st.column_config.NumberColumn(
-            "Trips in Dataset",
-            format="%d",
-        ),
-        "Avg Trip Value": st.column_config.NumberColumn(
-            "Avg Gross Trip Value*",
-            format="$%.2f",
-        ),
-        "Avg Miles": st.column_config.NumberColumn(
-            "Avg Miles",
-            format="%.1f",
-        ),
-        "Avg Minutes": st.column_config.NumberColumn(
-            "Avg Minutes",
-            format="%.1f",
-        ),
-        "Gross Value / Trip Hour": st.column_config.NumberColumn(
-            "Gross Value / Trip Hour*",
-            format="$%.2f",
-),
-    },
+    column_config=column_config,
 )
 st.caption(
     "*Avg Trip Value reflects the total amount charged for the trip "
